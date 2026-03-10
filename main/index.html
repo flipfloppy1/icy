@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Icecast Metadata JS Demo</title>
+    <meta
+      name="description"
+      content="Icecast Metadata JS - Javascript library that reads, parses, and queues real-time metadata from an Icecast stream."
+    />
+    <script src="https://eshaz.github.io/icecast-metadata-js/icecast-metadata-player-1.17.13.main.min.js"></script>
+    <style>
+      body {
+        background:
+          linear-gradient(
+              217deg,
+              rgba(255, 0, 0, 0.3),
+              rgba(255, 0, 0, 0) 70.71%
+            )
+            fixed,
+          linear-gradient(
+              127deg,
+              rgba(0, 255, 0, 0.3),
+              rgba(0, 255, 0, 0) 70.71%
+            )
+            fixed,
+          linear-gradient(
+              336deg,
+              rgba(0, 0, 255, 0.3),
+              rgba(0, 0, 255, 0) 70.71%
+            )
+            fixed;
+        text-align: left;
+        font-family: monospace;
+        margin: 0 10%;
+      }
+      header {
+        text-align: center;
+      }
+      .header-links {
+        font-size: 16px;
+        font-family: sans-serif;
+        text-decoration: none;
+        user-select: none;
+      }
+      .header-link {
+        text-decoration: none;
+      }
+      strong {
+        font-family: sans-serif;
+      }
+      hr {
+        margin: 20px 0;
+      }
+      pre {
+        margin: 0;
+      }
+      .metadata-info {
+        min-height: 500px;
+      }
+      .options {
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+        margin-left: 10px;
+      }
+      .row {
+        display: flex;
+      }
+    </style>
+    <script>
+      // helper functions for the demo
+      let icecastMetadataPlayer, metadataEl, metadataQueueEl;
+
+      const formatTime = (seconds) =>
+        new Date(seconds * 1000).toISOString().substr(14, 8);
+
+      const formatMetadata = (metadata) =>
+        JSON.stringify(metadata, null, 1)
+          .replace(/\{\n|\n\}/g, "")
+          .replace(/^ "|\n "/g, '\n"');
+
+      const onMetadata = (metadata) => {
+        metadataEl.innerHTML = `<td><pre>${formatMetadata(
+          metadata,
+        )}</pre></td>`;
+        onMetadataEnqueue();
+      };
+
+      const onMetadataEnqueue = () => {
+        metadataQueueEl.innerHTML = icecastMetadataPlayer.metadataQueue.reduce(
+          (acc, { metadata, timestampOffset }) =>
+            acc +
+            `<tr><td><pre>${formatTime(timestampOffset)}</pre></td>` +
+            `<td><pre>${formatMetadata(metadata)}</pre></td></tr>`,
+          `<th>Up Next</th>`,
+        );
+      };
+    </script>
+  </head>
+  <body
+    onload="document.getElementById('endpoint').value = 'http://localhost:8080/radio';"
+  >
+    <header>
+      <h1 style="margin-bottom: 0px">
+        <a href="https://github.com/eshaz/icecast-metadata-js"
+          ><b>icecast-metadata-js</b></a
+        >
+      </h1>
+      <p>
+        Javascript library that reads, parses, and queues real-time metadata
+        from an Icecast stream.
+      </p>
+      <div class="header-links">
+        <a class="header-link" href="https://eshaz.github.io/icecast-metadata-js">React Demo</a
+        >&nbsp;&nbsp; | &nbsp;&nbsp;<a
+          class="header-link"
+          href="https://eshaz.github.io/icecast-metadata-js/demo.html"
+          >HTML Demo</a
+        >&nbsp;&nbsp; | &nbsp;&nbsp;<a
+          class="header-link"
+          style="font-weight: bold"
+          href="https://eshaz.github.io/icecast-metadata-js/bare-minimum-demo.html"
+          ><i>"Bare Minimum"</i> HTML Demo</a
+        >&nbsp;&nbsp; | &nbsp;&nbsp;<a
+          class="header-link"
+          href="https://eshaz.github.io/icecast-metadata-js/vintage"
+          >Vintage Computers</a
+        >
+      </div>
+    </header>
+    <hr />
+    <strong>Icecast Metadata Player <i>"Bare Minimum"</i> HTML Demo</strong>
+    <a
+      href="https://github.com/eshaz/icecast-metadata-js/blob/master/src/demo/public/bare-minimum-demo.html"
+      >Source for this demo</a
+    >
+    <p>
+      <b>
+        This module is a part of
+        <a href="https://github.com/eshaz/icecast-metadata-js"
+          >icecast-metadata-js</a
+        >. See the links in the header for more information.</b
+      >
+    </p>
+    <p>
+      This page demonstrates the <i>bare-minimum</i> usage of the
+      IcecastMetadataPlayer module. See the other demo links in the header for
+      more detailed examples.
+    </p>
+
+    <details>
+      <summary><b>Usage / Example</b></summary>
+      <ol>
+        <li>
+          Download the
+          <a
+            href="https://github.com/eshaz/icecast-metadata-js/tree/master/src/icecast-metadata-player/build"
+            >latest build</a
+          >, or install via
+          <a href="https://www.npmjs.com/package/icecast-metadata-player">NPM</a
+          >.
+        </li>
+        <li>Include the file in a <i>&lt;script&gt;</i> tag in your html.</li>
+        <li>
+          <i>IcecastMetadataPlayer</i> is made available as a global variable in
+          your webpage to use wherever.
+        </li>
+        <li>
+          Checkout the
+          <a
+            href="https://github.com/eshaz/icecast-metadata-js/tree/master/src/icecast-metadata-player#readme"
+            >README</a
+          >
+          for more information.
+        </li>
+      </ol>
+      <b>Example</b>
+      <pre>
+    &lt;script src="icecast-metadata-player-1.17.13.main.min.js"&gt;&lt;/script&gt;
+    &lt;script&gt;
+      const onMetadata = (metadata) =&gt; {
+        document.getElementById("metadata").innerHTML = metadata.StreamTitle;
+      };
+      const player = 
+        new IcecastMetadataPlayer(
+          "http://localhost:8080/radio", // stream endpoint
+          { onMetadata }                        // options (onMetadata callback)
+        );
+    &lt;/script&gt;
+    &lt;body&gt;
+      &lt;button onclick="player.play();"&gt; Play &lt;/button&gt;
+      &lt;button onclick="player.stop();"&gt; Stop &lt;/button&gt;
+      &lt;p&gt; Now Playing: &lt;span id="metadata"&gt;&lt;/span&gt; &lt;/p&gt;
+    &lt;/body&gt;
+  </pre
+      >
+    </details>
+    <hr />
+    <ul>
+      <li>Press Play on the <code>audio</code> element to play the stream.</li>
+      <li>
+        To update the stream endpoint, type in the stream url, and click play.
+      </li>
+    </ul>
+    <div class="row">
+      <audio id="audio" controls>
+        Your browser does not support HTML5 audio.
+      </audio>
+      <div class="options">
+        <label for="endpoint">Stream Endpoint</label>
+        <input
+          class="stream-endpoint"
+          name="endpoint"
+          id="endpoint"
+          type="url"
+          value="http://localhost:8080/radio"
+        />
+      </div>
+    </div>
+    <hr />
+    <div class="metadata-info">
+      <table>
+        <thead>
+          <tr>
+            <th>Now Playing</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr id="metadata">
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+      <table id="metadataQueue"></table>
+    </div>
+  </body>
+  <script>
+    const endpoint = document.getElementById("endpoint");
+    const audioElement = document.getElementById("audio");
+    metadataEl = document.getElementById("metadata");
+    metadataQueueEl = document.getElementById("metadataQueue");
+
+    const getIcecastMetadataPlayer = () => {
+      icecastMetadataPlayer = new IcecastMetadataPlayer(endpoint.value, {
+        audioElement, //                  audio element in HTML
+        onMetadata, //                    called when metadata is synced with the audio
+        onMetadataEnqueue, //             called when metadata is discovered in the stream
+        metadataTypes: ["icy"], //        detect ICY metadata
+        icyDetectionTimeout: 5000, //     attempt to detect ICY metadata for 5 seconds
+        enableLogging: true, //           enable error logs to the console
+        onError: (message) => {
+          metadataEl.innerHTML = message;
+        },
+      });
+    };
+
+    getIcecastMetadataPlayer();
+
+    endpoint.addEventListener("change", async () => {
+      await icecastMetadataPlayer.detachAudioElement();
+      getIcecastMetadataPlayer();
+    });
+  </script>
+</html>
