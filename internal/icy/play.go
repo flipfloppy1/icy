@@ -9,7 +9,11 @@ import (
 func Play(glob string, details RadioDetails) (http.Handler, error) {
 	songs, err := filepath.Glob(glob)
 	if err != nil {
-		return nil, errors.New("invalid glob")
+		return nil, errors.New("icy.Play: invalid glob")
+	}
+
+	if len(songs) == 0 {
+		return nil, errors.New("icy.Play: glob returned no matches")
 	}
 
 	handler := &playHandler{
