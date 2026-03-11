@@ -136,7 +136,7 @@ func (h *playHandler) tick() {
 			continue
 		}
 
-		if bytes.Equal(frameContent[36:40], []byte("Xing")) || bytes.Contains(frameContent[:60], []byte("LAME")) {
+		if bytes.Equal(frameContent[36:40], []byte("Xing")) || bytes.Contains(frameContent[:100], []byte("LAME")) {
 			continue // ignore metadata frames
 		}
 
