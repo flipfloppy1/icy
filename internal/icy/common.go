@@ -1,6 +1,7 @@
 package icy
 
 import (
+	"bytes"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -99,6 +100,8 @@ func (h *playHandler) tick() {
 	}
 	var decoder *mp3.Decoder
 	var tagData TagData
+	var prevChunk *chunk
+	var prevChunkDuration *time.Duration
 	for {
 		prev := time.Now()
 
@@ -119,6 +122,27 @@ func (h *playHandler) tick() {
 				fmt.Printf("icy: error opening MP3 file %s: %v\n", h.songs[h.currentIdx], err)
 			}
 			decoder = mp3.NewDecoder(f)
+
+			if prevChunk != nil {
+				// Add a rest frame
+				c := chunk{
+					BitRate:    int(prevChunk.BitRate) / 1000,
+					SampleRate: int(prevChunk.SampleRate),
+					TagData:    tagData,
+					Channels:   2,
+					Data:       silence,
+				}
+				h.subscribersMutex.Lock()
+				for _, sub := range h.subscribers {
+					go func() {
+						sub <- c
+					}()
+				}
+				h.subscribersMutex.Unlock()
+
+				time.Sleep(time.Until(prev.Add(*prevChunkDuration)))
+				continue
+			}
 		}
 
 		var frame mp3.Frame
@@ -150,6 +174,9 @@ func (h *playHandler) tick() {
 		}
 		h.subscribersMutex.Unlock()
 
+		prevChunk = &c
+		d := frame.Duration()
+		prevChunkDuration = &d
 		time.Sleep(time.Until(prev.Add(frame.Duration())))
 	}
 }
@@ -234,3 +261,11 @@ func (h *playHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	}
 }
+
+var silence = append([]byte{
+	0xFF, 0xFB, 0x90, 0x64, 0x00, 0x0F, 0xF0, 0x00,
+	0x00, 0x69, 0x00, 0x00, 0x08, 0x00, 0x00, 0x0D,
+	0x20, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0xA4,
+	0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x34, 0x80,
+	0x00, 0x00, 0x04,
+}, bytes.Repeat([]byte{0x55}, 381)...)
