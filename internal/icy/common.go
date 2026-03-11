@@ -100,8 +100,6 @@ func (h *playHandler) tick() {
 	}
 	var decoder *mp3.Decoder
 	var tagData TagData
-	var prevChunk *chunk
-	var prevChunkDuration *time.Duration
 	for {
 		prev := time.Now()
 
@@ -122,27 +120,6 @@ func (h *playHandler) tick() {
 				fmt.Printf("icy: error opening MP3 file %s: %v\n", h.songs[h.currentIdx], err)
 			}
 			decoder = mp3.NewDecoder(f)
-
-			if prevChunk != nil {
-				// Add a rest frame
-				c := chunk{
-					BitRate:    int(prevChunk.BitRate) / 1000,
-					SampleRate: int(prevChunk.SampleRate),
-					TagData:    tagData,
-					Channels:   2,
-					Data:       silence,
-				}
-				h.subscribersMutex.Lock()
-				for _, sub := range h.subscribers {
-					go func() {
-						sub <- c
-					}()
-				}
-				h.subscribersMutex.Unlock()
-
-				time.Sleep(time.Until(prev.Add(*prevChunkDuration)))
-				continue
-			}
 		}
 
 		var frame mp3.Frame
@@ -153,10 +130,14 @@ func (h *playHandler) tick() {
 			decoder = nil
 			continue
 		}
-		bytes, err := io.ReadAll(frame.Reader())
+		frameContent, err := io.ReadAll(frame.Reader())
 		if err != nil {
 			fmt.Printf("icy: error reading mp3 frame content: %v\n", err)
 			continue
+		}
+
+		if bytes.Contains(frameContent, []byte("LAME")) && bytes.Contains(frameContent, []byte("Xing")) {
+			continue // ignore metadata frames
 		}
 
 		c := chunk{
@@ -164,7 +145,7 @@ func (h *playHandler) tick() {
 			SampleRate: int(frame.Header().SampleRate()),
 			TagData:    tagData,
 			Channels:   2,
-			Data:       bytes,
+			Data:       frameContent,
 		}
 		h.subscribersMutex.Lock()
 		for _, sub := range h.subscribers {
@@ -174,9 +155,6 @@ func (h *playHandler) tick() {
 		}
 		h.subscribersMutex.Unlock()
 
-		prevChunk = &c
-		d := frame.Duration()
-		prevChunkDuration = &d
 		time.Sleep(time.Until(prev.Add(frame.Duration())))
 	}
 }
