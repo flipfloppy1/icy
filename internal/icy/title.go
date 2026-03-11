@@ -1,9 +1,9 @@
 package icy
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -18,7 +18,7 @@ type TagData struct {
 var TitleHandler func(f *os.File) TagData = DefaultTitleHandler
 
 func DefaultTitleHandler(f *os.File) TagData {
-	data := TagData{TrackName: filepath.Base(f.Name()), ArtistName: ""}
+	data := TagData{TrackName: prettifyFilename(filepath.Base(f.Name())), ArtistName: ""}
 
 	frames, err := id3v2.Scan(f)
 	if err != nil {
@@ -37,8 +37,6 @@ func DefaultTitleHandler(f *os.File) TagData {
 
 	if titleFrame != nil {
 		data.TrackName = strings.Map(mapPrintable, string(titleFrame.Data))
-	} else {
-		fmt.Println("id3v2 tags did not contain TIT1")
 	}
 
 	if artistFrame != nil {
@@ -46,4 +44,19 @@ func DefaultTitleHandler(f *os.File) TagData {
 	}
 
 	return data
+}
+
+// prettifyFilename trims the 2-digit track number from the start of filename and removes the file extension if either exist.
+func prettifyFilename(filename string) string {
+	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
+
+	parts := strings.Split(filename, " ")
+	if len(parts) == 0 {
+		return filename
+	}
+
+	if _, err := strconv.Atoi(parts[0]); err == nil && len(parts[0]) == 2 {
+		return strings.Join(parts[1:], " ")
+	}
+	return filename
 }

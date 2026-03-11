@@ -1,19 +1,14 @@
 package icy
 
 import (
-	"bytes"
 	"crypto/rand"
-	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"sync"
-	"time"
-
-	"github.com/tcolgate/mp3"
 )
 
 type audioInfo struct {
@@ -98,68 +93,68 @@ func (h *playHandler) tick() {
 	if h.radioDetails.metaint == 0 {
 		h.radioDetails.metaint = 8192
 	}
-	var decoder *mp3.Decoder
+
+	h.next = h.nextFunc(len(h.songs))
+	h.nextTrack()
+
 	var tagData TagData
-	var prevFrame *mp3.Frame
 	for {
-		prev := time.Now()
+		f, err := os.Open(h.songs[h.currentIdx])
+		if err != nil {
+			fmt.Printf("icy: error opening MP3 file %s: %v\n", h.songs[h.currentIdx], err)
+			continue
+		}
+		tagData = TitleHandler(f)
+		f.Close()
+
+		ffmpeg := exec.Command("ffmpeg", "-re", "-i", h.songs[h.currentIdx], "-map", "0:a", "-ar", "44100", "-ac", "2", "-b:a", "192k", "-f", "mp3", "pipe:1")
+
+		stdout, err := ffmpeg.StdoutPipe()
+		if err != nil {
+			fmt.Printf("icy: error connecting stdout to ffmpeg: %v\n", err)
+			continue
+		}
+
+		err = ffmpeg.Start()
+		if err != nil {
+			fmt.Printf("icy: error starting ffmpeg: %v\n", err)
+			continue
+		}
+
+		go func() {
+			for err == nil {
+				data := make([]byte, 627)
+				var n int
+				n, err = stdout.Read(data)
+				if n > 0 {
+					c := chunk{
+						BitRate:    192,
+						SampleRate: 44100,
+						TagData:    tagData,
+						Channels:   2,
+						Data:       data[:n],
+					}
+					h.subscribersMutex.Lock()
+					for _, sub := range h.subscribers {
+						go func() {
+							sub <- c
+						}()
+					}
+					h.subscribersMutex.Unlock()
+				}
+			}
+		}()
+
+		err = ffmpeg.Wait()
+		if err != nil {
+			fmt.Printf("icy: error waiting for ffmpeg to complete: %v\n", err)
+		}
 
 		if len(h.next) == 0 {
 			h.next = h.nextFunc(len(h.songs))
-			h.nextTrack()
 		}
 
-		if decoder == nil {
-			f, err := os.Open(h.songs[h.currentIdx])
-			if err != nil {
-				fmt.Printf("icy: error opening MP3 file %s: %v\n", h.songs[h.currentIdx], err)
-			}
-			tagData = TitleHandler(f)
-			f.Close()
-			f, err = os.Open(h.songs[h.currentIdx])
-			if err != nil {
-				fmt.Printf("icy: error opening MP3 file %s: %v\n", h.songs[h.currentIdx], err)
-			}
-			decoder = mp3.NewDecoder(f)
-		}
-
-		var frame mp3.Frame
-		var skipped int
-		err := decoder.Decode(&frame, &skipped)
-		if errors.Is(err, io.EOF) {
-			h.nextTrack()
-			decoder = nil
-			continue
-		}
-
-		if prevFrame == nil {
-			prevFrame = &frame
-			continue
-		}
-
-		frameContent, err := io.ReadAll(prevFrame.Reader())
-		if err != nil {
-			fmt.Printf("icy: error reading mp3 frame content: %v\n", err)
-			continue
-		}
-
-		c := chunk{
-			BitRate:    int(prevFrame.Header().BitRate()) / 1000,
-			SampleRate: int(prevFrame.Header().SampleRate()),
-			TagData:    tagData,
-			Channels:   2,
-			Data:       frameContent,
-		}
-		h.subscribersMutex.Lock()
-		for _, sub := range h.subscribers {
-			go func() {
-				sub <- c
-			}()
-		}
-		h.subscribersMutex.Unlock()
-		prevFrame = &frame
-
-		time.Sleep(time.Until(prev.Add(frame.Duration())))
+		h.nextTrack()
 	}
 }
 
@@ -243,11 +238,3 @@ func (h *playHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	}
 }
-
-var silence = append([]byte{
-	0xFF, 0xFB, 0x90, 0x64, 0x00, 0x0F, 0xF0, 0x00,
-	0x00, 0x69, 0x00, 0x00, 0x08, 0x00, 0x00, 0x0D,
-	0x20, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0xA4,
-	0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x34, 0x80,
-	0x00, 0x00, 0x04,
-}, bytes.Repeat([]byte{0x55}, 381)...)
