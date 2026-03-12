@@ -1,6 +1,7 @@
 package icy
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"math"
@@ -127,20 +128,13 @@ func (h *playHandler) tick() {
 				var n int
 				n, err = stdout.Read(data)
 				if n > 0 {
-					c := chunk{
+					h.sendToSubscribers(chunk{
 						BitRate:    192,
 						SampleRate: 44100,
 						TagData:    tagData,
 						Channels:   2,
 						Data:       data[:n],
-					}
-					h.subscribersMutex.Lock()
-					for _, sub := range h.subscribers {
-						go func() {
-							sub <- c
-						}()
-					}
-					h.subscribersMutex.Unlock()
+					})
 				}
 			}
 		}()
@@ -158,14 +152,37 @@ func (h *playHandler) tick() {
 	}
 }
 
+// sendToSubscribers sends a clone of c to all subscribers.
+func (h *playHandler) sendToSubscribers(c chunk) {
+	h.subscribersMutex.Lock()
+	for _, sub := range h.subscribers {
+		select {
+		case sub <- chunk{
+			BitRate:    c.BitRate,
+			TagData:    c.TagData,
+			SampleRate: c.SampleRate,
+			Channels:   c.Channels,
+			Data:       bytes.Clone(c.Data), // cloned so it can be mutated by sub
+		}:
+		default:
+		}
+	}
+	h.subscribersMutex.Unlock()
+}
+
 func (h *playHandler) nextTrack() {
 	h.currentIdx = h.next[0]
 	h.next = h.next[1:]
 }
 
 func (h *playHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+	flusher, ok := res.(http.Flusher)
+	if !ok {
+		http.Error(res, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
 	subscriberId := rand.Text() + rand.Text()
-	sub := make(chan chunk)
+	sub := make(chan chunk, 32)
 
 	go func() {
 		ctx := req.Context()
@@ -180,7 +197,7 @@ func (h *playHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	h.subscribers[subscriberId] = sub
 	h.subscribersMutex.Unlock()
 
-	chunk := <-sub
+	first := <-sub
 
 	if req.Header.Get("Icy-Metadata") != "1" {
 		res.Header().Add("Content-Type", "text/plain")
@@ -201,15 +218,15 @@ func (h *playHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		pub = "1"
 	}
 	res.Header().Add("icy-pub", pub)
-	res.Header().Add("icy-sr", strconv.Itoa(chunk.SampleRate))
-	res.Header().Add("icy-br", strconv.Itoa(chunk.BitRate))
+	res.Header().Add("icy-sr", strconv.Itoa(first.SampleRate))
+	res.Header().Add("icy-br", strconv.Itoa(first.BitRate))
 	res.Header().Add("icy-metaint", strconv.Itoa(h.radioDetails.metaint))
-	res.Header().Add("icy-audio-info", audioInfo{Channels: chunk.Channels, BR: chunk.BitRate, SR: chunk.SampleRate}.String())
+	res.Header().Add("icy-audio-info", audioInfo{Channels: first.Channels, BR: first.BitRate, SR: first.SampleRate}.String())
 
 	var data []byte
 	var offset int = h.radioDetails.metaint
 
-	data, offset = h.insertStreamTitle(chunk.Data, chunk.TagData.TrackName, chunk.TagData.ArtistName, offset)
+	data, offset = h.insertStreamTitle(first.Data, first.TagData.TrackName, first.TagData.ArtistName, offset)
 
 	_, err := res.Write(data)
 	if err != nil {
@@ -217,24 +234,26 @@ func (h *playHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	prevTitle := chunk.TagData.TrackName
-	if len(chunk.Data) == len(data) {
+	prevTitle := first.TagData.TrackName
+	if len(first.Data) == len(data) {
 		prevTitle = ""
 	}
 
-	for chunk := range sub {
-		if chunk.TagData.TrackName == prevTitle {
-			data, offset = h.insertBlankMetadata(chunk.Data, offset)
+	for c := range sub {
+		var data []byte
+		if c.TagData.TrackName == prevTitle {
+			data, offset = h.insertBlankMetadata(c.Data, offset)
 		} else {
-			data, offset = h.insertStreamTitle(chunk.Data, chunk.TagData.TrackName, chunk.TagData.ArtistName, offset)
-			if len(chunk.Data) != len(data) {
-				prevTitle = chunk.TagData.TrackName
+			data, offset = h.insertStreamTitle(c.Data, c.TagData.TrackName, c.TagData.ArtistName, offset)
+			if len(c.Data) != len(data) {
+				prevTitle = c.TagData.TrackName
 			}
 		}
+
 		_, err := res.Write(data)
 		if err != nil {
 			return
 		}
-
+		flusher.Flush()
 	}
 }
