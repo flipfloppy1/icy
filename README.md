@@ -15,7 +15,7 @@ MPEG stream.
 
 ## API
 
-See the [pkgsite documentation](pkg.go.dev/github.com/flipfloppy1/icy).
+See the [pkgsite documentation](https://pkg.go.dev/github.com/flipfloppy1/icy).
 
 ## Examples
 
